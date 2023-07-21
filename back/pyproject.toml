@@ -1,0 +1,27 @@
+[tool.poetry]
+name = "meetup-maker"
+version = "0.1.0"
+description = "A scheduling utility"
+authors = ["Jared Dobry <jareddobry10@gmail.com>"]
+readme = "README.md"
+packages = [{include = "meetup_maker"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+argon2-cffi = "^21.3.0"
+dacite = "^1.8.1"
+pyyaml = "^6.0.1"
+websockets = "^11.0.3"
+
+[tool.poetry.group.dev.dependencies]
+black = "^23.7.0"
+flake8 = "^6.0.0"
+mypy = "^1.4.1"
+pre-commit = "^3.3.3"
+
+[tool.poetry.scripts]
+server = "meetup_maker.server:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
