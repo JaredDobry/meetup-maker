@@ -62,7 +62,7 @@ class ClientSignup(ClientRequest):
     first_name: str = "John"
     last_name: str = "Doe"
     email: str = "johndoe@example.com"
-    kdf: str = ""
+    password: str = ""
     type: Message = Message.SIGNUP
 
     @classmethod

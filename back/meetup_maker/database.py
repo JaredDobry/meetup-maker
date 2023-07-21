@@ -5,7 +5,7 @@ from pathlib import Path
 from logging import getLogger
 from sys import exit
 
-from meetup_maker.api import User, Event, Participant
+from meetup_maker.api import ClientSignup, User, Event, Participant
 
 logger = getLogger("meetup-maker")
 
@@ -112,7 +112,7 @@ def credentials_valid(c: Connection, email: str, password: str) -> bool:
         return False
 
 
-def add_user(c: Connection, user: User) -> bool:
+def add_user(c: Connection, signup: ClientSignup) -> bool:
     cursor = c.cursor()
     try:
         cursor.execute(
@@ -120,11 +120,11 @@ def add_user(c: Connection, user: User) -> bool:
             INSERT INTO users (first_name, last_name, email, kdf)
             VALUES (?, ?, ?, ?)
             """,
-            (user.first_name, user.last_name, user.email, user.kdf),
+            (signup.first_name, signup.last_name, signup.email, kdf(signup.password)),
         )
         c.commit()
         return True
     except Exception as e:
-        logger.exception(f"Exception while creating user {user} - {e}")
+        logger.exception(f"Exception while creating user {signup} - {e}")
         c.rollback()
         return False

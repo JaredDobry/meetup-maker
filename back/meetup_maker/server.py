@@ -1,19 +1,16 @@
 from asyncio import Future, run
-from dacite import from_dict
-from dataclasses import dataclass
 from datetime import datetime
 from logging import getLogger
 from json import loads
 from pathlib import Path
 from pprint import pformat
 from typing import Union
+from ssl import PROTOCOL_TLS_SERVER, SSLContext
 
 from meetup_maker.api import (
-    ClientRequest,
     ClientSignup,
     ServerResponse,
     ServerSignup,
-    User,
     Message,
     make_uuid4,
 )
@@ -23,7 +20,6 @@ from meetup_maker.database import (
     connect_db,
     create_tables,
     credentials_valid,
-    kdf,
     user_exists,
 )
 from websockets.server import WebSocketServerProtocol, serve
@@ -34,12 +30,18 @@ g_config: Configuration
 g_sessions: dict[str, datetime]
 
 
-def signup(user: User) -> bool:
+def signup(signup: ClientSignup) -> bool:
     c = connect_db(g_config.database.path)
-    if user_exists(c, user.email):
+    if user_exists(c, signup.email):
+        logger.info(f"User {signup.email} already exists.")
         return False
 
-    return add_user(c, user)
+    result = add_user(c, signup)
+    if result:
+        logger.info(f"Added user {signup.email}")
+    else:
+        logger.info(f"Failed to add user {signup.email}")
+    return result
 
 
 def login(email: str, password: str) -> bool:
@@ -71,8 +73,16 @@ def heartbeat(token: str) -> bool:
 
 
 def _handle_signup(m: ClientSignup) -> Union[ServerSignup, ServerResponse]:
-    u = User(m.first_name, m.last_name, m.email, m.kdf)
-    result = signup(u)
+    if len(m.first_name) == 0:
+        return ServerResponse(m.type, reason="No first name provided")
+    if len(m.last_name) == 0:
+        return ServerResponse(m.type, reason="No last name provided")
+    if len(m.email) == 0:
+        return ServerResponse(m.type, reason="No email provided")
+    if len(m.password) == 0:
+        return ServerResponse(m.type, reason="No password provided")
+
+    result = signup(m)
     if not result:
         return ServerResponse(m.type, reason="Could not sign up user")
 
@@ -82,7 +92,9 @@ def _handle_signup(m: ClientSignup) -> Union[ServerSignup, ServerResponse]:
 
 
 async def _server(ws: WebSocketServerProtocol):
+    logger.info("Client connected")
     async for message in ws:
+        logger.info(f"New message - {message}")
         if not isinstance(message, str):
             if not isinstance(message, bytes):
                 return ServerResponse(Message.INVALID, reason="Invalid websocket input")
@@ -91,18 +103,43 @@ async def _server(ws: WebSocketServerProtocol):
 
         try:
             d = loads(message)
-            d["message"] = Message(d["message"])
-            if d["message"] == Message.SIGNUP:
+            d["type"] = Message(d["type"])
+            if d["type"] == Message.SIGNUP:
                 await ws.send(_handle_signup(ClientSignup.cast(d)).serialize())
-        except KeyError:
+        except KeyError as e:
+            logger.exception(f"KeyError - {e}")
             return ServerResponse(Message.INVALID, reason="Invalid message type")
-        except Exception:
+        except Exception as e:
+            logger.exception(f"Other exception - {e}")
             return ServerResponse(Message.INVALID, reason="Exception")
+    logger.info("Client disconnected")
+
+
+def make_context() -> SSLContext:
+    p_cert = Path(g_config.server.cert).expanduser()
+    if not p_cert.exists():
+        logger.exception(f"Certificate {p_cert} does not exist")
+        exit(1)
+    if p_cert.is_dir():
+        logger.exception(f"Certificate {p_cert} is a directory, not a file")
+        exit(1)
+
+    p_key = Path(g_config.server.cert_key).expanduser()
+    if not p_key.exists():
+        logger.exception(f"Certificate key {p_key} does not exist")
+        exit(1)
+    if p_key.is_dir():
+        logger.exception(f"Certificate key {p_key} is a directory, not a file")
+        exit(1)
+
+    context = SSLContext(PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(p_cert, p_key)
+    return context
 
 
 async def server():
     logger.info("Standing up websocket server")
-    async with serve(_server, "localhost", 8765):
+    async with serve(_server, "localhost", 8765, ssl=make_context()):
         await Future()
 
 

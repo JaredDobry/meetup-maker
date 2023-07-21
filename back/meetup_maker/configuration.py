@@ -41,6 +41,8 @@ class LoggingConfiguration:
 class ServerConfiguration:
     bind_address: str
     bind_port: int
+    cert: str
+    cert_key: str
     session_length: int
 
 
