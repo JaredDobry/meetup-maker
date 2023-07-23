@@ -60,11 +60,11 @@ class ServerResponse:
 
 @dataclass
 class ClientSignup(ClientRequest):
-    first_name: str = "John"
-    last_name: str = "Doe"
-    email: str = "johndoe@example.com"
-    password: str = ""
     type: Message = Message.SIGNUP
+    first_name: str = ""
+    last_name: str = ""
+    email: str = ""
+    password: str = ""
 
     @classmethod
     def cast(cls, d: dict) -> Self:
@@ -74,5 +74,23 @@ class ClientSignup(ClientRequest):
 @dataclass
 class ServerSignup(ServerResponse):
     type: Message = Message.SIGNUP
+    ok: bool = True
+    token: str = ""
+
+
+@dataclass
+class ClientLogin(ClientRequest):
+    type: Message = Message.LOGIN
+    email: str = ""
+    password: str = ""
+
+    @classmethod
+    def cast(cls, d: dict) -> Self:
+        return from_dict(cls, d)
+
+
+@dataclass
+class ServerLogin(ServerResponse):
+    type: Message = Message.LOGIN
     ok: bool = True
     token: str = ""

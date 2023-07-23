@@ -116,7 +116,7 @@ export const Login: React.FC<LoginProps> = (props) => {
               disabled={sending}
               onClick={async () => {
                 setSending(true);
-                console.log("Sending loging request");
+                console.log("Sending login request");
                 const u = uuidv4();
                 setUUID(u);
                 const m: ClientLogin = {

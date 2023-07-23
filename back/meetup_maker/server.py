@@ -9,6 +9,8 @@ from ssl import PROTOCOL_TLS_SERVER, SSLContext
 
 from meetup_maker.api import (
     ClientSignup,
+    ClientLogin,
+    ServerLogin,
     ServerResponse,
     ServerSignup,
     Message,
@@ -91,6 +93,21 @@ def _handle_signup(m: ClientSignup) -> Union[ServerSignup, ServerResponse]:
     return ServerSignup(m.uuid, token=token)
 
 
+def _handle_login(m: ClientLogin) -> Union[ServerLogin, ServerResponse]:
+    if len(m.email) == 0:
+        return ServerResponse(m.uuid, m.type, reason="No email provided")
+    if len(m.password) == 0:
+        return ServerResponse(m.uuid, m.type, reason="No password provided")
+
+    result = login(m.email, m.password)
+    if not result:
+        return ServerResponse(m.uuid, m.type, reason="Invalid credentials")
+
+    token = make_uuid4()
+    g_sessions[token] = datetime.now()
+    return ServerLogin(m.uuid, token=token)
+
+
 async def _server(ws: WebSocketServerProtocol):
     logger.info("Client connected")
     async for message in ws:
@@ -111,6 +128,8 @@ async def _server(ws: WebSocketServerProtocol):
             d["type"] = Message(d["type"])
             if d["type"] == Message.SIGNUP:
                 await ws.send(_handle_signup(ClientSignup.cast(d)).serialize())
+            if d["type"] == Message.LOGIN:
+                await ws.send(_handle_login(ClientLogin.cast(d)).serialize())
             else:
                 await ws.send(
                     ServerResponse(
