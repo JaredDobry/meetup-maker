@@ -33,3 +33,10 @@ export type ClientSignup = ClientRequest & User;
 export type ServerSignup = {
   token: string;
 } & ServerResponse;
+
+export type ClientLogin = {
+  email: string;
+  password: string;
+} & ClientRequest;
+
+export type ServerLogin = ServerSignup;

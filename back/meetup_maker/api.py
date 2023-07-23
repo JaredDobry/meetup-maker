@@ -49,6 +49,7 @@ class ClientRequest:
 
 @dataclass
 class ServerResponse:
+    uuid: str
     type: Message
     ok: bool = False
     reason: Optional[str] = None

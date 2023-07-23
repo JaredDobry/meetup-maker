@@ -74,21 +74,21 @@ def heartbeat(token: str) -> bool:
 
 def _handle_signup(m: ClientSignup) -> Union[ServerSignup, ServerResponse]:
     if len(m.first_name) == 0:
-        return ServerResponse(m.type, reason="No first name provided")
+        return ServerResponse(m.uuid, m.type, reason="No first name provided")
     if len(m.last_name) == 0:
-        return ServerResponse(m.type, reason="No last name provided")
+        return ServerResponse(m.uuid, m.type, reason="No last name provided")
     if len(m.email) == 0:
-        return ServerResponse(m.type, reason="No email provided")
+        return ServerResponse(m.uuid, m.type, reason="No email provided")
     if len(m.password) == 0:
-        return ServerResponse(m.type, reason="No password provided")
+        return ServerResponse(m.uuid, m.type, reason="No password provided")
 
     result = signup(m)
     if not result:
-        return ServerResponse(m.type, reason="Could not sign up user")
+        return ServerResponse(m.uuid, m.type, reason="Could not sign up user")
 
     token = make_uuid4()
     g_sessions[token] = datetime.now()
-    return ServerSignup(token=token)
+    return ServerSignup(m.uuid, token=token)
 
 
 async def _server(ws: WebSocketServerProtocol):
@@ -97,21 +97,38 @@ async def _server(ws: WebSocketServerProtocol):
         logger.info(f"New message - {message}")
         if not isinstance(message, str):
             if not isinstance(message, bytes):
-                return ServerResponse(Message.INVALID, reason="Invalid websocket input")
+                return ServerResponse(
+                    "", Message.INVALID, reason="Invalid websocket input"
+                )
             else:
                 message = message.decode()
 
+        uuid = ""
         try:
             d = loads(message)
+            if "uuid" in d.keys():
+                uuid = d["uuid"]
             d["type"] = Message(d["type"])
             if d["type"] == Message.SIGNUP:
                 await ws.send(_handle_signup(ClientSignup.cast(d)).serialize())
+            else:
+                await ws.send(
+                    ServerResponse(
+                        uuid, d["type"], reason="Not implemented yet"
+                    ).serialize()
+                )
         except KeyError as e:
             logger.exception(f"KeyError - {e}")
-            return ServerResponse(Message.INVALID, reason="Invalid message type")
+            await ws.send(
+                ServerResponse(
+                    uuid, Message.INVALID, reason="Invalid message type"
+                ).serialize()
+            )
         except Exception as e:
             logger.exception(f"Other exception - {e}")
-            return ServerResponse(Message.INVALID, reason="Exception")
+            await ws.send(
+                ServerResponse(uuid, Message.INVALID, reason="Exception").serialize()
+            )
     logger.info("Client disconnected")
 
 

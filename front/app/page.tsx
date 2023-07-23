@@ -1,48 +1,65 @@
 "use client";
 import React from "react";
-import { CssBaseline } from "@mui/material";
+import {
+  CircularProgress,
+  CssBaseline,
+  Stack,
+  Typography,
+} from "@mui/material";
 import { Login } from "./pages/login";
 
-const socket = new WebSocket("wss://localhost:8765");
+const WSS_ADDRESS = "wss://localhost:8765";
+const MIN_RETRY_MS = 1000;
+const MAX_RETRY_MS = 10000;
 
 export default function Home() {
-  const [socketOpen, setSocketOpen] = React.useState<boolean>(false);
+  const [socket, setSocket] = React.useState<WebSocket>();
 
-  React.useEffect(() => {
-    const onOpen = () => {
-      setSocketOpen(true);
+  const connect = React.useCallback((retry: number) => {
+    setSocket(undefined);
+    const s = new WebSocket(WSS_ADDRESS);
+    s.onopen = () => {
+      console.log("Socket open");
+      setSocket(s);
     };
-    socket.addEventListener("open", onOpen);
-    return () => {
-      socket.removeEventListener("open", onOpen);
+    s.onmessage = (ev) => {
+      console.log(`Message: ${ev.data}`);
+    };
+    s.onclose = () => {
+      s.close();
+      console.log(`Socket closed. Reconnecting in ${retry / 1000}s`);
+      setTimeout(() => {
+        connect(Math.min(MAX_RETRY_MS, retry + retry));
+      }, retry);
+    };
+    s.onclose = (err) => {
+      s.close();
+      console.log(`Socket error. Reconnecting in ${retry / 1000}s`);
+      setTimeout(() => {
+        connect(Math.min(MAX_RETRY_MS, retry + retry));
+      }, retry);
     };
   }, []);
 
   React.useEffect(() => {
-    const onClose = () => {
-      setSocketOpen(false);
-    };
-    socket.addEventListener("close", onClose);
-    return () => {
-      socket.removeEventListener("close", onClose);
-    };
-  }, []);
-
-  // TODO: Remove debug listener
-  React.useEffect(() => {
-    const onMessage = (ev: MessageEvent) => {
-      console.log(ev.data);
-    };
-    socket.addEventListener("message", onMessage);
-    return () => {
-      socket.removeEventListener("message", onMessage);
-    };
-  }, []);
+    connect(MIN_RETRY_MS);
+  }, [connect]);
 
   return (
     <>
       <CssBaseline />
-      {socketOpen && <Login ws={socket} />}
+      {!socket && (
+        <Stack
+          alignItems="center"
+          justifyContent="center"
+          spacing={4}
+          height="100vh"
+        >
+          <Typography variant="h3">Connecting to Meetup Maker</Typography>
+          <CircularProgress />
+        </Stack>
+      )}
+      {socket && <Login ws={socket} />}
     </>
   );
 }

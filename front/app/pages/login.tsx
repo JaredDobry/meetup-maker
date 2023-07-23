@@ -1,6 +1,13 @@
 import { Stack, Typography, TextField, Button } from "@mui/material";
 import { v4 as uuidv4 } from "uuid";
-import { ClientSignup, Message, ServerSignup, User } from "../api";
+import {
+  ClientLogin,
+  ClientSignup,
+  Message,
+  ServerLogin,
+  ServerSignup,
+  User,
+} from "../api";
 import React from "react";
 
 type LoginProps = {
@@ -14,23 +21,43 @@ export const Login: React.FC<LoginProps> = (props) => {
   const [password, setPassword] = React.useState<string>("");
 
   const [isSignup, setIsSignup] = React.useState<boolean>(false);
+
   const [sending, setSending] = React.useState<boolean>(false);
+  const [uuid, setUUID] = React.useState<string>("");
 
   React.useEffect(() => {
     const handleSignup = (ev: MessageEvent) => {
       const m: ServerSignup = JSON.parse(ev.data);
-      if (m.type === Message.SIGNUP) {
+      if (m.uuid !== uuid || m.type !== Message.SIGNUP) return;
+
+      if (m.ok) {
         setSending(false);
-        if (m.ok) {
-          console.log("Signup ok!");
-        } else {
-          console.log("Signup failed");
-        }
+        console.log(`Signup ok! - ${m.token}`);
+      } else {
+        setSending(false);
+        console.log(`Signup failed - ${m.reason}`);
       }
     };
     props.ws.addEventListener("message", handleSignup);
     return () => props.ws.removeEventListener("message", handleSignup);
-  }, [props.ws, setSending]);
+  }, [props.ws, setSending, uuid]);
+
+  React.useEffect(() => {
+    const handleLogin = (ev: MessageEvent) => {
+      const m: ServerLogin = JSON.parse(ev.data);
+      if (m.uuid !== uuid || m.type !== Message.LOGIN) return;
+
+      if (m.ok) {
+        setSending(false);
+        console.log(`Login ok! - ${m.token}`);
+      } else {
+        setSending(false);
+        console.log(`Login failed - ${m.reason}`);
+      }
+    };
+    props.ws.addEventListener("message", handleLogin);
+    return () => props.ws.removeEventListener("message", handleLogin);
+  }, [props.ws, setSending, uuid]);
 
   return (
     <Stack
@@ -85,7 +112,24 @@ export const Login: React.FC<LoginProps> = (props) => {
         {!isSignup && (
           <>
             <Button onClick={() => setIsSignup(true)}>Signup</Button>
-            <Button disabled={sending} variant="contained">
+            <Button
+              disabled={sending}
+              onClick={async () => {
+                setSending(true);
+                console.log("Sending loging request");
+                const u = uuidv4();
+                setUUID(u);
+                const m: ClientLogin = {
+                  uuid: u,
+                  type: Message.LOGIN,
+                  email: email,
+                  password: password,
+                };
+                props.ws.send(JSON.stringify(m));
+                console.log("Login request sent");
+              }}
+              variant="contained"
+            >
               Login
             </Button>
           </>
@@ -98,8 +142,10 @@ export const Login: React.FC<LoginProps> = (props) => {
               onClick={async () => {
                 setSending(true);
                 console.log("Sending signup request");
+                const u = uuidv4();
+                setUUID(u);
                 const m: ClientSignup = {
-                  uuid: uuidv4(),
+                  uuid: u,
                   type: Message.SIGNUP,
                   first_name: firstName,
                   last_name: lastName,
