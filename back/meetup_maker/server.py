@@ -1,20 +1,20 @@
 from asyncio import Future, run
 from datetime import datetime
-from logging import getLogger
 from json import loads
+from logging import getLogger
 from pathlib import Path
 from pprint import pformat
-from typing import Optional, Union
 from ssl import PROTOCOL_TLS_SERVER, SSLContext
+from typing import Optional, Union
 
 from meetup_maker.api import (
-    ClientSignup,
     ClientLogin,
+    ClientSignup,
     ClientToken,
+    Message,
     ServerLogin,
     ServerResponse,
     ServerSignup,
-    Message,
     ServerToken,
     User,
     make_uuid4,
@@ -112,7 +112,6 @@ async def _server(ws: WebSocketServerProtocol):  # noqa: C901
     logger.info("Client connected")
     token = make_uuid4()
     async for message in ws:
-        logger.info(f"New message - {message}")
         if not isinstance(message, str):
             if not isinstance(message, bytes):
                 return ServerResponse(
@@ -121,6 +120,7 @@ async def _server(ws: WebSocketServerProtocol):  # noqa: C901
             else:
                 message = message.decode()
 
+        logger.info(f"New message - {message}")
         uuid = ""
         try:
             d = loads(message)

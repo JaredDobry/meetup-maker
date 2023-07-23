@@ -1,7 +1,8 @@
-import { Button, Stack, Typography } from "@mui/material";
-import React from "react";
 import Cookies from "js-cookie";
+import React from "react";
+
 import { useTokenStore } from "@/state";
+import { Button, Stack, Typography } from "@mui/material";
 
 export function Dashboard() {
   const firstName = useTokenStore((state) => state.first_name);

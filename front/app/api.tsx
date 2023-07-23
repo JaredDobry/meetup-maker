@@ -42,7 +42,7 @@ export class ClientSignup extends ClientRequest {
     first_name: string,
     last_name: string,
     email: string,
-    password: string
+    password: string,
   ) {
     super();
     this.type = Message.SIGNUP;

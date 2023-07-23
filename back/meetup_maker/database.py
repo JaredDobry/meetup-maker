@@ -1,11 +1,11 @@
+from logging import getLogger
+from pathlib import Path
+from sqlite3 import Connection, connect
+from sys import exit
 from typing import Optional
+
 from argon2 import PasswordHasher
 from argon2.exceptions import VerificationError
-from sqlite3 import connect, Connection
-from pathlib import Path
-from logging import getLogger
-from sys import exit
-
 from meetup_maker.api import ClientSignup, User
 
 logger = getLogger("meetup-maker")
@@ -144,4 +144,4 @@ def get_user(c: Connection, email: str) -> Optional[User]:
     result = cursor.fetchone()
     if not result:
         return None
-    return User(*result, kdf="")
+    return User(result[0], result[1], result[2], "")

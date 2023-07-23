@@ -1,11 +1,16 @@
+import Cookies from "js-cookie";
+import React from "react";
+
+import { useTokenStore } from "@/state";
 import {
-  Stack,
-  Typography,
-  TextField,
+  Alert,
   Button,
   Collapse,
-  Alert,
+  Stack,
+  TextField,
+  Typography,
 } from "@mui/material";
+
 import {
   ClientLogin,
   ClientSignup,
@@ -13,9 +18,6 @@ import {
   ServerLogin,
   ServerSignup,
 } from "../api";
-import React from "react";
-import { useTokenStore } from "@/state";
-import Cookies from "js-cookie";
 
 type LoginProps = {
   ws: WebSocket;
@@ -188,7 +190,7 @@ export const Login: React.FC<LoginProps> = (props) => {
                   firstName,
                   lastName,
                   email,
-                  password
+                  password,
                 );
                 setUUID(m.uuid);
                 props.ws.send(JSON.stringify(m));

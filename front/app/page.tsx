@@ -1,5 +1,8 @@
 "use client";
+import Cookies from "js-cookie";
 import React from "react";
+
+import { useTokenStore } from "@/state";
 import {
   Button,
   CircularProgress,
@@ -7,11 +10,10 @@ import {
   Stack,
   Typography,
 } from "@mui/material";
-import { Login } from "./pages/login";
-import { useTokenStore } from "@/state";
-import { Dashboard } from "./pages/dashboard";
-import Cookies from "js-cookie";
+
 import { ClientToken, Message, ServerToken } from "./api";
+import { Dashboard } from "./pages/dashboard";
+import { Login } from "./pages/login";
 
 const WSS_ADDRESS = "wss://localhost:8765";
 const MIN_RETRY_MS = 1000;
