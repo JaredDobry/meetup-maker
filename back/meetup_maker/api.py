@@ -33,8 +33,7 @@ class Message(IntEnum):
     SIGNUP = 0
     LOGIN = 1
     TOKEN = 2
-    HEARTBEAT = 3
-    CREATE_EVENT = 4
+    CREATE_EVENT = 3
 
 
 def make_uuid4() -> str:
@@ -49,6 +48,7 @@ class ClientRequest:
 
 @dataclass
 class ServerResponse:
+    uuid: str
     type: Message
     ok: bool = False
     reason: Optional[str] = None
@@ -59,11 +59,11 @@ class ServerResponse:
 
 @dataclass
 class ClientSignup(ClientRequest):
-    first_name: str = "John"
-    last_name: str = "Doe"
-    email: str = "johndoe@example.com"
-    password: str = ""
     type: Message = Message.SIGNUP
+    first_name: str = ""
+    last_name: str = ""
+    email: str = ""
+    password: str = ""
 
     @classmethod
     def cast(cls, d: dict) -> Self:
@@ -75,3 +75,40 @@ class ServerSignup(ServerResponse):
     type: Message = Message.SIGNUP
     ok: bool = True
     token: str = ""
+
+
+@dataclass
+class ClientLogin(ClientRequest):
+    type: Message = Message.LOGIN
+    email: str = ""
+    password: str = ""
+
+    @classmethod
+    def cast(cls, d: dict) -> Self:
+        return from_dict(cls, d)
+
+
+@dataclass
+class ServerLogin(ServerResponse):
+    type: Message = Message.LOGIN
+    ok: bool = True
+    token: str = ""
+    first_name: str = ""
+
+
+@dataclass
+class ClientToken(ClientRequest):
+    type: Message = Message.TOKEN
+    email: str = ""
+    token: str = ""
+
+    @classmethod
+    def cast(cls, d: dict) -> Self:
+        return from_dict(cls, d)
+
+
+@dataclass
+class ServerToken(ServerResponse):
+    type: Message = Message.TOKEN
+    ok: bool = True
+    first_name: str = ""

@@ -1,7 +1,23 @@
-import { Stack, Typography, TextField, Button } from "@mui/material";
-import { v4 as uuidv4 } from "uuid";
-import { ClientSignup, Message, ServerSignup, User } from "../api";
+import Cookies from "js-cookie";
 import React from "react";
+
+import { useTokenStore } from "@/state";
+import {
+  Alert,
+  Button,
+  Collapse,
+  Stack,
+  TextField,
+  Typography,
+} from "@mui/material";
+
+import {
+  ClientLogin,
+  ClientSignup,
+  Message,
+  ServerLogin,
+  ServerSignup,
+} from "../api";
 
 type LoginProps = {
   ws: WebSocket;
@@ -14,22 +30,71 @@ export const Login: React.FC<LoginProps> = (props) => {
   const [password, setPassword] = React.useState<string>("");
 
   const [isSignup, setIsSignup] = React.useState<boolean>(false);
+
   const [sending, setSending] = React.useState<boolean>(false);
+  const [uuid, setUUID] = React.useState<string>("");
+
+  const [error, setError] = React.useState<string>();
+  const [errorOpen, setErrorOpen] = React.useState<boolean>(false);
+
+  const setStateEmail = useTokenStore((state) => state.setEmail);
+  const setStateFirstName = useTokenStore((state) => state.setFirstName);
+  const setToken = useTokenStore((state) => state.setToken);
 
   React.useEffect(() => {
     const handleSignup = (ev: MessageEvent) => {
       const m: ServerSignup = JSON.parse(ev.data);
-      if (m.type === Message.SIGNUP) {
+      if (m.uuid !== uuid || m.type !== Message.SIGNUP) return;
+
+      if (m.ok) {
         setSending(false);
-        if (m.ok) {
-          console.log("Signup ok!");
-        } else {
-          console.log("Signup failed");
-        }
+        setToken(m.token);
+        Cookies.set("token", m.token, { expires: 1 });
+      } else {
+        setSending(false);
+        setError(m.reason);
+        setErrorOpen(true);
       }
     };
     props.ws.addEventListener("message", handleSignup);
     return () => props.ws.removeEventListener("message", handleSignup);
+  }, [props.ws, setSending, setToken, uuid]);
+
+  React.useEffect(() => {
+    const handleLogin = (ev: MessageEvent) => {
+      const m: ServerLogin = JSON.parse(ev.data);
+      if (m.uuid !== uuid || m.type !== Message.LOGIN) return;
+
+      if (m.ok) {
+        setSending(false);
+        setToken(m.token);
+        Cookies.set("token", m.token, { expires: 1 });
+        setStateFirstName(m.first_name);
+      } else {
+        setSending(false);
+        setError(m.reason);
+        setErrorOpen(true);
+      }
+    };
+    props.ws.addEventListener("message", handleLogin);
+    return () => props.ws.removeEventListener("message", handleLogin);
+  }, [props.ws, setSending, setStateFirstName, setToken, uuid]);
+
+  React.useEffect(() => {
+    const onClose = () => {
+      setSending(false);
+    };
+    const onError = () => {
+      setSending(false);
+    };
+
+    props.ws.addEventListener("close", onClose);
+    props.ws.addEventListener("error", onError);
+
+    return () => {
+      props.ws.removeEventListener("close", onClose);
+      props.ws.removeEventListener("error", onError);
+    };
   }, [props.ws, setSending]);
 
   return (
@@ -40,6 +105,16 @@ export const Login: React.FC<LoginProps> = (props) => {
       spacing={2}
     >
       <Typography variant="h4">Meetup Maker</Typography>
+      <Collapse in={errorOpen}>
+        <Alert
+          onClose={() => {
+            setErrorOpen(false);
+          }}
+          severity="error"
+        >
+          {error}
+        </Alert>
+      </Collapse>
       {isSignup && (
         <>
           <TextField
@@ -85,7 +160,20 @@ export const Login: React.FC<LoginProps> = (props) => {
         {!isSignup && (
           <>
             <Button onClick={() => setIsSignup(true)}>Signup</Button>
-            <Button disabled={sending} variant="contained">
+            <Button
+              disabled={sending}
+              onClick={async () => {
+                setSending(true);
+                Cookies.set("email", email, { expires: 1 });
+                const m = new ClientLogin(email, password);
+                setUUID(m.uuid);
+                props.ws.send(JSON.stringify(m));
+
+                setStateEmail(email);
+                setStateFirstName(firstName);
+              }}
+              variant="contained"
+            >
               Login
             </Button>
           </>
@@ -97,17 +185,17 @@ export const Login: React.FC<LoginProps> = (props) => {
               disabled={sending}
               onClick={async () => {
                 setSending(true);
-                console.log("Sending signup request");
-                const m: ClientSignup = {
-                  uuid: uuidv4(),
-                  type: Message.SIGNUP,
-                  first_name: firstName,
-                  last_name: lastName,
-                  email: email,
-                  password: password,
-                };
+                Cookies.set("email", email, { expires: 1 });
+                const m = new ClientSignup(
+                  firstName,
+                  lastName,
+                  email,
+                  password,
+                );
+                setUUID(m.uuid);
                 props.ws.send(JSON.stringify(m));
-                console.log("Signup request sent");
+
+                setStateEmail(email);
               }}
               variant="contained"
             >

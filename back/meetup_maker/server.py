@@ -1,17 +1,22 @@
 from asyncio import Future, run
 from datetime import datetime
-from logging import getLogger
 from json import loads
+from logging import getLogger
 from pathlib import Path
 from pprint import pformat
-from typing import Union
 from ssl import PROTOCOL_TLS_SERVER, SSLContext
+from typing import Optional, Union
 
 from meetup_maker.api import (
+    ClientLogin,
     ClientSignup,
+    ClientToken,
+    Message,
+    ServerLogin,
     ServerResponse,
     ServerSignup,
-    Message,
+    ServerToken,
+    User,
     make_uuid4,
 )
 from meetup_maker.configuration import Configuration, load_configuration, setup_logging
@@ -20,6 +25,7 @@ from meetup_maker.database import (
     connect_db,
     create_tables,
     credentials_valid,
+    get_user,
     user_exists,
 )
 from websockets.server import WebSocketServerProtocol, serve
@@ -44,15 +50,15 @@ def signup(signup: ClientSignup) -> bool:
     return result
 
 
-def login(email: str, password: str) -> bool:
+def login(email: str, password: str) -> Optional[User]:
     c = connect_db(g_config.database.path)
     if not user_exists(c, email):
-        return False
+        return None
 
     if not credentials_valid(c, email, password):
-        return False
+        return None
 
-    return True
+    return get_user(c, email)
 
 
 def validate_token(token: str) -> bool:
@@ -72,47 +78,97 @@ def heartbeat(token: str) -> bool:
     return validate_token(token)
 
 
-def _handle_signup(m: ClientSignup) -> Union[ServerSignup, ServerResponse]:
+def _handle_signup(m: ClientSignup, token: str) -> Union[ServerSignup, ServerResponse]:
     if len(m.first_name) == 0:
-        return ServerResponse(m.type, reason="No first name provided")
+        return ServerResponse(m.uuid, m.type, reason="No first name provided")
     if len(m.last_name) == 0:
-        return ServerResponse(m.type, reason="No last name provided")
+        return ServerResponse(m.uuid, m.type, reason="No last name provided")
     if len(m.email) == 0:
-        return ServerResponse(m.type, reason="No email provided")
+        return ServerResponse(m.uuid, m.type, reason="No email provided")
     if len(m.password) == 0:
-        return ServerResponse(m.type, reason="No password provided")
+        return ServerResponse(m.uuid, m.type, reason="No password provided")
 
     result = signup(m)
     if not result:
-        return ServerResponse(m.type, reason="Could not sign up user")
+        return ServerResponse(m.uuid, m.type, reason="Could not sign up user")
 
-    token = make_uuid4()
-    g_sessions[token] = datetime.now()
-    return ServerSignup(token=token)
+    return ServerSignup(m.uuid, token=token)
 
 
-async def _server(ws: WebSocketServerProtocol):
+def _handle_login(m: ClientLogin, token: str) -> Union[ServerLogin, ServerResponse]:
+    if len(m.email) == 0:
+        return ServerResponse(m.uuid, m.type, reason="No email provided")
+    if len(m.password) == 0:
+        return ServerResponse(m.uuid, m.type, reason="No password provided")
+
+    result = login(m.email, m.password)
+    if not result:
+        return ServerResponse(m.uuid, m.type, reason="Invalid credentials")
+
+    return ServerLogin(m.uuid, token=token, first_name=result.first_name)
+
+
+async def _server(ws: WebSocketServerProtocol):  # noqa: C901
     logger.info("Client connected")
+    token = make_uuid4()
     async for message in ws:
-        logger.info(f"New message - {message}")
         if not isinstance(message, str):
             if not isinstance(message, bytes):
-                return ServerResponse(Message.INVALID, reason="Invalid websocket input")
+                return ServerResponse(
+                    "", Message.INVALID, reason="Invalid websocket input"
+                )
             else:
                 message = message.decode()
 
+        logger.info(f"New message - {message}")
+        uuid = ""
         try:
             d = loads(message)
+            if "uuid" in d.keys():
+                uuid = d["uuid"]
             d["type"] = Message(d["type"])
             if d["type"] == Message.SIGNUP:
-                await ws.send(_handle_signup(ClientSignup.cast(d)).serialize())
+                await ws.send(_handle_signup(ClientSignup.cast(d), token).serialize())
+            elif d["type"] == Message.LOGIN:
+                await ws.send(_handle_login(ClientLogin.cast(d), token).serialize())
+            elif d["type"] == Message.TOKEN:
+                m = ClientToken.cast(d)
+                c = connect_db(g_config.database.path)
+                u = get_user(c, m.email)
+                if validate_token(m.token):
+                    token = m.token
+                    await ws.send(
+                        ServerToken(
+                            m.uuid, first_name=u.first_name if u else ""
+                        ).serialize()
+                    )
+                else:
+                    await ws.send(
+                        ServerResponse(
+                            m.uuid, m.type, reason="Expired or invalid token"
+                        ).serialize()
+                    )
+            else:
+                await ws.send(
+                    ServerResponse(
+                        uuid, d["type"], reason="Not implemented yet"
+                    ).serialize()
+                )
         except KeyError as e:
             logger.exception(f"KeyError - {e}")
-            return ServerResponse(Message.INVALID, reason="Invalid message type")
+            await ws.send(
+                ServerResponse(
+                    uuid, Message.INVALID, reason="Invalid message type"
+                ).serialize()
+            )
         except Exception as e:
             logger.exception(f"Other exception - {e}")
-            return ServerResponse(Message.INVALID, reason="Exception")
+            await ws.send(
+                ServerResponse(uuid, Message.INVALID, reason="Exception").serialize()
+            )
     logger.info("Client disconnected")
+    if token:
+        g_sessions[token] = datetime.now()
 
 
 def make_context() -> SSLContext:
