@@ -33,8 +33,7 @@ class Message(IntEnum):
     SIGNUP = 0
     LOGIN = 1
     TOKEN = 2
-    HEARTBEAT = 3
-    CREATE_EVENT = 4
+    CREATE_EVENT = 3
 
 
 def make_uuid4() -> str:
@@ -94,3 +93,22 @@ class ServerLogin(ServerResponse):
     type: Message = Message.LOGIN
     ok: bool = True
     token: str = ""
+    first_name: str = ""
+
+
+@dataclass
+class ClientToken(ClientRequest):
+    type: Message = Message.TOKEN
+    email: str = ""
+    token: str = ""
+
+    @classmethod
+    def cast(cls, d: dict) -> Self:
+        return from_dict(cls, d)
+
+
+@dataclass
+class ServerToken(ServerResponse):
+    type: Message = Message.TOKEN
+    ok: bool = True
+    first_name: str = ""

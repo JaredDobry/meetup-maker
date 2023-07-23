@@ -4,16 +4,19 @@ from logging import getLogger
 from json import loads
 from pathlib import Path
 from pprint import pformat
-from typing import Union
+from typing import Optional, Union
 from ssl import PROTOCOL_TLS_SERVER, SSLContext
 
 from meetup_maker.api import (
     ClientSignup,
     ClientLogin,
+    ClientToken,
     ServerLogin,
     ServerResponse,
     ServerSignup,
     Message,
+    ServerToken,
+    User,
     make_uuid4,
 )
 from meetup_maker.configuration import Configuration, load_configuration, setup_logging
@@ -22,6 +25,7 @@ from meetup_maker.database import (
     connect_db,
     create_tables,
     credentials_valid,
+    get_user,
     user_exists,
 )
 from websockets.server import WebSocketServerProtocol, serve
@@ -46,15 +50,15 @@ def signup(signup: ClientSignup) -> bool:
     return result
 
 
-def login(email: str, password: str) -> bool:
+def login(email: str, password: str) -> Optional[User]:
     c = connect_db(g_config.database.path)
     if not user_exists(c, email):
-        return False
+        return None
 
     if not credentials_valid(c, email, password):
-        return False
+        return None
 
-    return True
+    return get_user(c, email)
 
 
 def validate_token(token: str) -> bool:
@@ -74,7 +78,7 @@ def heartbeat(token: str) -> bool:
     return validate_token(token)
 
 
-def _handle_signup(m: ClientSignup) -> Union[ServerSignup, ServerResponse]:
+def _handle_signup(m: ClientSignup, token: str) -> Union[ServerSignup, ServerResponse]:
     if len(m.first_name) == 0:
         return ServerResponse(m.uuid, m.type, reason="No first name provided")
     if len(m.last_name) == 0:
@@ -88,12 +92,10 @@ def _handle_signup(m: ClientSignup) -> Union[ServerSignup, ServerResponse]:
     if not result:
         return ServerResponse(m.uuid, m.type, reason="Could not sign up user")
 
-    token = make_uuid4()
-    g_sessions[token] = datetime.now()
     return ServerSignup(m.uuid, token=token)
 
 
-def _handle_login(m: ClientLogin) -> Union[ServerLogin, ServerResponse]:
+def _handle_login(m: ClientLogin, token: str) -> Union[ServerLogin, ServerResponse]:
     if len(m.email) == 0:
         return ServerResponse(m.uuid, m.type, reason="No email provided")
     if len(m.password) == 0:
@@ -103,13 +105,12 @@ def _handle_login(m: ClientLogin) -> Union[ServerLogin, ServerResponse]:
     if not result:
         return ServerResponse(m.uuid, m.type, reason="Invalid credentials")
 
-    token = make_uuid4()
-    g_sessions[token] = datetime.now()
-    return ServerLogin(m.uuid, token=token)
+    return ServerLogin(m.uuid, token=token, first_name=result.first_name)
 
 
-async def _server(ws: WebSocketServerProtocol):
+async def _server(ws: WebSocketServerProtocol):  # noqa: C901
     logger.info("Client connected")
+    token = make_uuid4()
     async for message in ws:
         logger.info(f"New message - {message}")
         if not isinstance(message, str):
@@ -127,9 +128,26 @@ async def _server(ws: WebSocketServerProtocol):
                 uuid = d["uuid"]
             d["type"] = Message(d["type"])
             if d["type"] == Message.SIGNUP:
-                await ws.send(_handle_signup(ClientSignup.cast(d)).serialize())
-            if d["type"] == Message.LOGIN:
-                await ws.send(_handle_login(ClientLogin.cast(d)).serialize())
+                await ws.send(_handle_signup(ClientSignup.cast(d), token).serialize())
+            elif d["type"] == Message.LOGIN:
+                await ws.send(_handle_login(ClientLogin.cast(d), token).serialize())
+            elif d["type"] == Message.TOKEN:
+                m = ClientToken.cast(d)
+                c = connect_db(g_config.database.path)
+                u = get_user(c, m.email)
+                if validate_token(m.token):
+                    token = m.token
+                    await ws.send(
+                        ServerToken(
+                            m.uuid, first_name=u.first_name if u else ""
+                        ).serialize()
+                    )
+                else:
+                    await ws.send(
+                        ServerResponse(
+                            m.uuid, m.type, reason="Expired or invalid token"
+                        ).serialize()
+                    )
             else:
                 await ws.send(
                     ServerResponse(
@@ -149,6 +167,8 @@ async def _server(ws: WebSocketServerProtocol):
                 ServerResponse(uuid, Message.INVALID, reason="Exception").serialize()
             )
     logger.info("Client disconnected")
+    if token:
+        g_sessions[token] = datetime.now()
 
 
 def make_context() -> SSLContext:
